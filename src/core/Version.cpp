@@ -129,6 +129,7 @@ Version Version::current()
     v.major = VELOX_VERSION_MAJOR;
     v.minor = VELOX_VERSION_MINOR;
     v.patch = VELOX_VERSION_PATCH;
+    v.prerelease = QStringLiteral(VELOX_VERSION_PRERELEASE);
     return v;
 }
 

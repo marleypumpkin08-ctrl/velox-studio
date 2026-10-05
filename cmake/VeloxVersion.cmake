@@ -4,7 +4,7 @@
 # Velox Studio's file format is versioned independently from the application
 # version. Both are centralised here:
 #
-#   VELOX_APP_VERSION    semantic application version (set by project())
+#   VELOX_APP_VERSION    semantic application version, including prerelease
 #   VLX_FORMAT_VERSION   on-disk .vlx document container version
 #   VELOX_PLUGIN_API_VERSION  plugin ABI version
 #
@@ -53,6 +53,8 @@ endfunction()
 function(velox_generate_version_header target)
     velox_resolve_git_revision(_git_rev)
 
+    string(REGEX REPLACE "^${PROJECT_VERSION}(-)?" "" VELOX_APP_VERSION_PRERELEASE
+        "${VELOX_APP_VERSION}")
     string(TIMESTAMP _build_date "%Y-%m-%d" UTC)
 
     set(_out_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -69,7 +71,8 @@ function(velox_generate_version_header target)
 #define VELOX_VERSION_MAJOR        ${PROJECT_VERSION_MAJOR}
 #define VELOX_VERSION_MINOR        ${PROJECT_VERSION_MINOR}
 #define VELOX_VERSION_PATCH        ${PROJECT_VERSION_PATCH}
-#define VELOX_VERSION_STRING       \"${PROJECT_VERSION}\"
+#define VELOX_VERSION_STRING       \"${VELOX_APP_VERSION}\"
+#define VELOX_VERSION_PRERELEASE   \"${VELOX_APP_VERSION_PRERELEASE}\"
 
 #define VELOX_VLX_FORMAT_VERSION   ${VLX_FORMAT_VERSION}
 #define VELOX_PLUGIN_API_VERSION   ${VELOX_PLUGIN_API_VERSION}

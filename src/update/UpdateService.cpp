@@ -18,7 +18,7 @@ namespace {
 QUrl latestReleaseUrl()
 {
 #ifndef VELOX_GITHUB_REPOSITORY
-#define VELOX_GITHUB_REPOSITORY "veloxstudio/VeloxStudio"
+#define VELOX_GITHUB_REPOSITORY "marleypumpkin08-ctrl/velox-studio"
 #endif
     return QUrl(QStringLiteral("https://api.github.com/repos/%1/releases/latest")
                     .arg(QString::fromLatin1(VELOX_GITHUB_REPOSITORY)));

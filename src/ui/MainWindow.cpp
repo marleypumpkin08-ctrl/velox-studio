@@ -15,11 +15,15 @@
 #include <QComboBox>
 #include <QDockWidget>
 #include <QEasingCurve>
+#include <QEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFutureWatcher>
+#include <QGraphicsDropShadowEffect>
+#include <QGraphicsOpacityEffect>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QImageReader>
@@ -37,6 +41,8 @@
 #include <QSlider>
 #include <QStandardItemModel>
 #include <QStatusBar>
+#include <QShowEvent>
+#include <QSequentialAnimationGroup>
 #include <QTextBrowser>
 #include <QToolBar>
 #include <QTimer>
@@ -45,10 +51,14 @@
 #include <QWidget>
 #include <QWindow>
 #include <QStyle>
+#include <QParallelAnimationGroup>
+#include <QPauseAnimation>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <utility>
 
 #ifdef Q_OS_WIN
@@ -58,6 +68,81 @@
 
 namespace velox::ui {
 namespace {
+
+class HoverGlowController final : public QObject
+{
+public:
+    explicit HoverGlowController(QObject* parent)
+        : QObject(parent)
+    {
+    }
+
+    void install(QWidget* widget)
+    {
+        if (widget == nullptr || m_effects.contains(widget)) {
+            return;
+        }
+        auto* effect = new QGraphicsDropShadowEffect(widget);
+        effect->setOffset(0.0, 0.0);
+        effect->setBlurRadius(0.0);
+        effect->setColor(QColor(111, 70, 255, 0));
+        widget->setGraphicsEffect(effect);
+
+        auto* group = new QParallelAnimationGroup(this);
+        auto* blur = new QPropertyAnimation(effect, "blurRadius", group);
+        blur->setDuration(190);
+        blur->setEasingCurve(QEasingCurve::OutCubic);
+        auto* color = new QPropertyAnimation(effect, "color", group);
+        color->setDuration(190);
+        color->setEasingCurve(QEasingCurve::OutCubic);
+        group->addAnimation(blur);
+        group->addAnimation(color);
+        m_effects.insert(widget, effect);
+        m_groups.insert(widget, group);
+        m_blurAnimations.insert(widget, blur);
+        m_colorAnimations.insert(widget, color);
+        widget->installEventFilter(this);
+        connect(widget, &QObject::destroyed, this, [this, widget] {
+            m_effects.remove(widget);
+            m_groups.remove(widget);
+            m_blurAnimations.remove(widget);
+            m_colorAnimations.remove(widget);
+        });
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        auto* widget = qobject_cast<QWidget*>(watched);
+        if (widget == nullptr || !m_effects.contains(widget)) {
+            return QObject::eventFilter(watched, event);
+        }
+        if (event->type() == QEvent::Enter || event->type() == QEvent::Leave
+            || event->type() == QEvent::EnabledChange) {
+            const bool glowing = event->type() == QEvent::Enter && widget->isEnabled();
+            QGraphicsDropShadowEffect* effect = m_effects.value(widget);
+            QParallelAnimationGroup* group = m_groups.value(widget);
+            QPropertyAnimation* blur = m_blurAnimations.value(widget);
+            QPropertyAnimation* color = m_colorAnimations.value(widget);
+            if (effect != nullptr && group != nullptr && blur != nullptr && color != nullptr) {
+                group->stop();
+                blur->setStartValue(effect->blurRadius());
+                blur->setEndValue(glowing ? 16.0 : 0.0);
+                color->setStartValue(effect->color());
+                color->setEndValue(glowing ? QColor(111, 70, 255, 155)
+                                           : QColor(111, 70, 255, 0));
+                group->start();
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QHash<QWidget*, QPointer<QGraphicsDropShadowEffect>> m_effects;
+    QHash<QWidget*, QPointer<QParallelAnimationGroup>> m_groups;
+    QHash<QWidget*, QPointer<QPropertyAnimation>> m_blurAnimations;
+    QHash<QWidget*, QPointer<QPropertyAnimation>> m_colorAnimations;
+};
 
 class TitleBar final : public QWidget
 {
@@ -155,6 +240,13 @@ MainWindow::MainWindow(QVulkanInstance* instance, QWidget* parent)
     m_recoveryPath = Paths::recoveryDirectory() + QStringLiteral("/autosave.vlx");
     createShell();
     createMenus();
+    auto* hoverGlow = new HoverGlowController(this);
+    for (QPushButton* button : findChildren<QPushButton*>()) {
+        hoverGlow->install(button);
+    }
+    for (QToolButton* button : findChildren<QToolButton*>()) {
+        hoverGlow->install(button);
+    }
 
     m_autosaveTimer = new QTimer(this);
     m_autosaveTimer->setInterval(1200);
@@ -309,6 +401,12 @@ void MainWindow::createShell()
     m_progressAnimation->setEasingCurve(QEasingCurve::OutCubic);
     m_updateBanner->setStyleSheet(
         QStringLiteral("background: #101a33; border-bottom: 1px solid #7544ff;"));
+    auto* bannerOpacity = new QGraphicsOpacityEffect(m_updateBanner);
+    bannerOpacity->setOpacity(0.0);
+    m_updateBanner->setGraphicsEffect(bannerOpacity);
+    m_updateBannerAnimation = new QPropertyAnimation(bannerOpacity, "opacity", this);
+    m_updateBannerAnimation->setDuration(420);
+    m_updateBannerAnimation->setEasingCurve(QEasingCurve::OutCubic);
     m_updateBanner->setVisible(false);
     layout->addWidget(m_updateBanner);
 
@@ -790,8 +888,57 @@ void MainWindow::showUpdate(QString version, QString notes, QUrl downloadUrl,
     m_updateHeading->setText(tr("New Version Available — %1").arg(m_releaseVersion));
     m_updateButton->setText(tr("Update to Version %1").arg(m_releaseVersion));
     m_changelog->setMarkdown(notes);
-    m_updateBanner->setVisible(true);
+    animateUpdateBannerIn();
     statusBar()->showMessage(tr("Version %1 is available.").arg(m_releaseVersion), 10000);
+}
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    if (!m_introAnimationPlayed) {
+        m_introAnimationPlayed = true;
+        animateWorkspaceIn();
+    }
+}
+
+void MainWindow::animateWorkspaceIn()
+{
+    m_introAnimation = new QSequentialAnimationGroup(this);
+    const QList<QWidget*> surfaces{
+        menuWidget(),
+        findChild<QToolBar*>(QStringLiteral("canvasToolbar")),
+        m_toolPanel,
+        m_layerPanel,
+        m_historyList
+    };
+    for (QWidget* surface : surfaces) {
+        if (surface == nullptr || !surface->isVisible()) {
+            continue;
+        }
+        auto* opacity = new QGraphicsOpacityEffect(surface);
+        opacity->setOpacity(0.0);
+        surface->setGraphicsEffect(opacity);
+        auto* fade = new QPropertyAnimation(opacity, "opacity", m_introAnimation);
+        fade->setDuration(260);
+        fade->setStartValue(0.0);
+        fade->setEndValue(1.0);
+        fade->setEasingCurve(QEasingCurve::OutCubic);
+        m_introAnimation->addPause(55);
+        m_introAnimation->addAnimation(fade);
+    }
+    m_introAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void MainWindow::animateUpdateBannerIn()
+{
+    if (m_updateBanner->isVisible()) {
+        return;
+    }
+    m_updateBanner->setVisible(true);
+    m_updateBannerAnimation->stop();
+    m_updateBannerAnimation->setStartValue(0.0);
+    m_updateBannerAnimation->setEndValue(1.0);
+    m_updateBannerAnimation->start();
 }
 
 void MainWindow::setDownloadProgress(qint64 received, qint64 total)

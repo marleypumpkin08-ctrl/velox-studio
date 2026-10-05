@@ -1,5 +1,6 @@
 #include "UpdateManifest.h"
 #include "UpdaterArguments.h"
+#include "BuildInfo.h"
 #include "Version.h"
 #include "VlxFormat.h"
 #include "VulkanWindow.h"
@@ -225,6 +226,8 @@ int main(int argc, char* argv[])
     const auto prerelease = velox::Version::parse(QStringLiteral("1.2.3-rc.1"));
     check(release && prerelease && *prerelease < *release,
           "semantic version release sorts after prerelease");
+    check(velox::Version::current().toString() == velox::BuildInfo::versionString(),
+          "current semantic version matches application version metadata");
 
     velox::updater::Arguments updaterArguments;
     const QStringList validArguments{

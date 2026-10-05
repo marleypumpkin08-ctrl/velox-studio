@@ -15,6 +15,7 @@ class QMenuBar;
 class QProgressBar;
 class QPushButton;
 class QPropertyAnimation;
+class QSequentialAnimationGroup;
 class QSlider;
 class QToolBar;
 class QTextBrowser;
@@ -37,6 +38,7 @@ public:
     explicit MainWindow(QVulkanInstance* instance, QWidget* parent = nullptr);
 
 protected:
+    void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 
@@ -48,6 +50,8 @@ private:
     bool saveDocument(bool saveAs = false);
     bool persistRecoveryDocument();
     void finishAutosave();
+    void animateWorkspaceIn();
+    void animateUpdateBannerIn();
     void scheduleAutosave();
     void setEditorLocked(bool locked);
     void showUpdate(QString version, QString notes, QUrl downloadUrl,
@@ -79,6 +83,8 @@ private:
     QAction* m_undoAction = nullptr;
     QAction* m_redoAction = nullptr;
     QPropertyAnimation* m_progressAnimation = nullptr;
+    QPropertyAnimation* m_updateBannerAnimation = nullptr;
+    QSequentialAnimationGroup* m_introAnimation = nullptr;
     QTimer* m_autosaveTimer = nullptr;
     QFutureWatcher<velox::VlxFormat::SaveResult>* m_autosaveWatcher = nullptr;
     QUrl m_downloadUrl;
@@ -89,6 +95,7 @@ private:
     bool m_editorLocked = false;
     bool m_refreshingDocumentUi = false;
     bool m_autosavePending = false;
+    bool m_introAnimationPlayed = false;
 };
 
 } // namespace velox::ui
